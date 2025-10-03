@@ -1,0 +1,95 @@
+# .github/workflows/docker-image.yml
+#
+# 构建并推送 Docker 镜像到 GHCR（Dokploy 使用）
+# – 适配含有大写字母的 GitHub 用户名 / 组织名
+# – 自动生成 latest / 分支 / 提交 SHA 等多种 tag
+# – 镜像仓库部分由 metadata-action 自动转成小写
+#
+name: Build and Push Docker Image for Dokploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ 配置 Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3️⃣ 登录 GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }} 
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 4️⃣ 生成镜像元数据（自动 *lowercase*）
+      #    ---------------------------------------------------------
+      #    - `images:` 可以保留大小写；action 会统一改成小写
+      #    - 默认输出:
+      #         steps.meta.outputs.tags   → 逗号分隔的 tag 列表
+      #         steps.meta.outputs.labels → Docker Label 列表
+      #    ---------------------------------------------------------
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}   # e.g. DieselNiu/demo → dieselniu/demo
+          # 可选：根据触发类型自动附加版本/分支等标签
+          tags: |
+            type=sha,format=long           # ghcr.io/…:sha-abcdef...
+            type=raw,value=latest          # ghcr.io/…:latest
+
+      # 5️⃣ 构建并推送
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}      # 已全部小写
+          labels: ${{ steps.meta.outputs.labels }}  # 已全部小写
+          build-args: |
+            NEXT_PUBLIC_BASE_URL=${{ secrets.NEXT_PUBLIC_BASE_URL }}
+            NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_PRO_MONTHLY }}
+            NEXT_PUBLIC_STRIPE_PRICE_PRO_YEARLY=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_PRO_YEARLY }}
+            NEXT_PUBLIC_STRIPE_PRICE_LIFETIME=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_LIFETIME }}
+            NEXT_PUBLIC_STRIPE_PRICE_CREDITS_BASIC=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_BASIC }}
+            NEXT_PUBLIC_STRIPE_PRICE_CREDITS_STANDARD=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_STANDARD }}
+            NEXT_PUBLIC_STRIPE_PRICE_CREDITS_PREMIUM=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_PREMIUM }}
+            NEXT_PUBLIC_STRIPE_PRICE_CREDITS_ENTERPRISE=${{ secrets.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_ENTERPRISE }}
+            NEXT_PUBLIC_DEMO_WEBSITE=${{ secrets.NEXT_PUBLIC_DEMO_WEBSITE }}
+            NEXT_PUBLIC_GOOGLE_ANALYTICS_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID }}
+            NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ secrets.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+            NEXT_PUBLIC_UMAMI_SCRIPT=${{ secrets.NEXT_PUBLIC_UMAMI_SCRIPT }}
+            NEXT_PUBLIC_OPENPANEL_CLIENT_ID=${{ secrets.NEXT_PUBLIC_OPENPANEL_CLIENT_ID }}
+            NEXT_PUBLIC_PLAUSIBLE_DOMAIN=${{ secrets.NEXT_PUBLIC_PLAUSIBLE_DOMAIN }}
+            NEXT_PUBLIC_PLAUSIBLE_SCRIPT=${{ secrets.NEXT_PUBLIC_PLAUSIBLE_SCRIPT }}
+            NEXT_PUBLIC_AHREFS_WEBSITE_ID=${{ secrets.NEXT_PUBLIC_AHREFS_WEBSITE_ID }}
+            NEXT_PUBLIC_SELINE_TOKEN=${{ secrets.NEXT_PUBLIC_SELINE_TOKEN }}
+            NEXT_PUBLIC_DATAFAST_WEBSITE_ID=${{ secrets.NEXT_PUBLIC_DATAFAST_WEBSITE_ID }}
+            NEXT_PUBLIC_DATAFAST_DOMAIN=${{ secrets.NEXT_PUBLIC_DATAFAST_DOMAIN }}
+            NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
+            NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
+            NEXT_PUBLIC_CLARITY_PROJECT_ID=${{ secrets.NEXT_PUBLIC_CLARITY_PROJECT_ID }}
+            NEXT_PUBLIC_AFFILIATE_AFFONSO_ID=${{ secrets.NEXT_PUBLIC_AFFILIATE_AFFONSO_ID }}
+            NEXT_PUBLIC_AFFILIATE_PROMOTEKIT_ID=${{ secrets.NEXT_PUBLIC_AFFILIATE_PROMOTEKIT_ID }}
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY=${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+            NEXT_PUBLIC_CRISP_WEBSITE_ID=${{ secrets.NEXT_PUBLIC_CRISP_WEBSITE_ID }}
+
+      # 6️⃣ （可选）通知 Dokploy Webhook 进行部署
+      - name: Trigger Dokploy Deployment Webhook
+        if: success() && env.DOKPLOY_WEBHOOK_URL != ''
+        run: curl -X POST "$DOKPLOY_WEBHOOK_URL"
+        env:
+          DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
